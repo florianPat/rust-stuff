@@ -12,20 +12,35 @@ fn handle_connection(mut stream: TcpStream) {
         let deserialized_message = super::recv(&mut stream);
 
         match deserialized_message {
-            super::TeamsMessage::NewUser(username) => {
-                log::info!("new user with username {}", username);
+            Ok(request) => match request {
+                Some(request) => match request {
+                    super::TeamsMessage::NewUser(username) => {
+                        log::info!("new user with username {}", username);
+                    },
+                    super::TeamsMessage::UserExit(username) => {
+                        log::info!("User leaves teams. Bye bye {}", username);
+                        return;
+                    },
+                    super::TeamsMessage::Message(m) => {
+                        log::info!("New message for user {} with message {}", m.user, m.message);
+                    },
+                },
+                None => {
+                    log::warn!("Message type not known!");
+                    continue;
+                }
             },
-            super::TeamsMessage::UserExit(username) => {
-                log::info!("User leaves teams. Bye bye {}", username);
+            Err(e) => {
+                log::error!("Could not read, disconnect {:?}", e);
                 return;
-            },
-            super::TeamsMessage::Message(m) => {
-                log::info!("New message for user {} with message {}", m.user, m.message);
-            },
+            }
         }
 
         let response = super::TeamsMessage::Message(super::Message{user: "Flo!".to_string(), message: "New message".to_string()});
-        super::send(&response, &mut stream);
+        if let Err(e) = super::send(&response, &mut stream) {
+            log::error!("Could not send, disconnect {:?}", e);
+            return;
+        }
     }
 }
 
