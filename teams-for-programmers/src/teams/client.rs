@@ -8,7 +8,11 @@ fn setup_username(connection: &mut std::net::TcpStream) -> String {
     println!("Please choose a username:");
     let mut username = String::new();
     std::io::stdin().read_line(&mut username).unwrap();
-    let trimmed_username = username.trim_end();
+    let trimmed_username = username.trim();
+    if "" == trimmed_username {
+        println!("The username needs to be something, are you trying edge cases here???");
+        std::process::exit(1);
+    }
     let message = super::TeamsMessage::NewUser(trimmed_username.to_string());
 
     super::send(&message, connection).unwrap();
@@ -53,7 +57,7 @@ pub fn run() -> Result<(), std::io::Error> {
     loop {
         match rx.recv().unwrap() {
             Command::NewMessage(teams_message) => match teams_message {
-                super::TeamsMessage::Message(m) => println!("New message: {}:: {}", m.user, m.message),
+                super::TeamsMessage::Message(m) => println!("New message!\n'{}': '{}'\n\n", m.user, m.message),
                 _ => {},
             },
             Command::Input(i) => {

@@ -18,7 +18,7 @@ enum TeamsMessage  {
     Message(Message),
 }
 
-fn try_recv(stream: &mut TcpStream) -> Result<Option<TeamsMessage>, std::io::Error> {
+fn try_recv(stream: &TcpStream) -> Result<Option<TeamsMessage>, std::io::Error> {
     let mut reader = std::io::BufReader::new(stream);
     let received_bytes: &[u8];
     match reader.fill_buf() {
@@ -49,7 +49,7 @@ fn try_recv(stream: &mut TcpStream) -> Result<Option<TeamsMessage>, std::io::Err
     Ok(Some(deserialized_message))
 }
 
-fn recv(stream: &mut TcpStream) -> Result<Option<TeamsMessage>, std::io::Error> {
+fn recv(stream: &TcpStream) -> Result<Option<TeamsMessage>, std::io::Error> {
     let mut reader = std::io::BufReader::new(stream);
     let received: &[u8] = match reader.fill_buf() {
         Ok(r) => r,
