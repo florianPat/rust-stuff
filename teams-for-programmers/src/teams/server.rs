@@ -60,12 +60,12 @@ fn handle_connection(stream: TcpStream, handler_map: Arc<Mutex<HashMap<String, T
                         break;
                     },
                     super::TeamsMessage::Message(m) => {
-                        log::info!("New message for user {} with message {}", m.user, m.message);
+                        log::info!("New message for user {} with message {}", m.user, &m.message);
                         if m.user == user {
                             log::info!("Wants to send to the same user, continue...");
                             continue;
                         }
-                        let mut locked_map = handler_map.lock().unwrap();
+                        /*let mut locked_map = handler_map.lock().unwrap();
                         match locked_map.get_mut(&m.user) {
                             Some(stream) => {
                                 let response = super::TeamsMessage::Message(super::Message{user: user.clone(), message: m.message});
@@ -79,6 +79,13 @@ fn handle_connection(stream: TcpStream, handler_map: Arc<Mutex<HashMap<String, T
                                 log::info!("User does not exist, should probably inform the client...");
                                 continue;
                             },
+                        }*/
+                        let mut locked_map = handler_map.lock().unwrap();
+                        let cool = locked_map.get_mut(&user).unwrap();
+                        let response = super::TeamsMessage::Message(super::Message{user: user.clone(), message: m.message});
+                        if let Err(e) = super::send(&response, cool) {
+                            log::error!("Could not send, disconnect {:?}", e);
+                            break;
                         }
                     },
                 },
@@ -89,7 +96,7 @@ fn handle_connection(stream: TcpStream, handler_map: Arc<Mutex<HashMap<String, T
             },
             Err(e) => {
                 log::error!("Could not read, disconnect {:?}", e);
-                return;
+                break;
             }
         }
     }
