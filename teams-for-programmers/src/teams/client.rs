@@ -27,6 +27,58 @@ fn setup_username(connection: &mut std::net::TcpStream) -> String {
     trimmed_username.to_string()
 }
 
+fn draw(frame: &mut tui::terminal::Frame<tui::backend::CrosstermBackend<std::io::Stdout>>) -> () {
+    let top_chunks = tui::layout::Layout::default()
+        .margin(1)
+        .direction(tui::layout::Direction::Horizontal)
+        .constraints([
+            tui::layout::Constraint::Ratio(1, 3),
+            tui::layout::Constraint::Ratio(2, 3),
+        ])
+        .split(frame.size())
+    ;
+
+    let chat_chunks = tui::layout::Layout::default()
+        .direction(tui::layout::Direction::Vertical)
+        .constraints([
+            tui::layout::Constraint::Percentage(90),
+            tui::layout::Constraint::Percentage(10),
+        ])
+        .split(top_chunks[1])
+    ;
+
+    let chats_collection_block = tui::widgets::Block::default()
+        .title("Chats")
+        .borders(tui::widgets::Borders::ALL);
+    let chat_list = tui::widgets::List::new([
+        tui::widgets::ListItem::new("Item 1"),
+        tui::widgets::ListItem::new("Item 2"),
+    ])
+        .block(chats_collection_block);
+    let mut chat_list_state = tui::widgets::ListState::default();
+    chat_list_state.select(Some(0));
+    frame.render_stateful_widget(chat_list, top_chunks[0], &mut chat_list_state);
+
+    let chats_collection_block = tui::widgets::Block::default()
+        .title("Chat Messages")
+        .borders(tui::widgets::Borders::ALL);
+    let messages_paragraph = tui::widgets::Paragraph::new(
+        tui::text::Text::from(
+            tui::text::Spans::from(vec![
+                tui::text::Span::raw("User: Message"),
+            ])
+        )
+    )
+        .block(chats_collection_block);
+    frame.render_widget(messages_paragraph, chat_chunks[0]);
+
+    let chats_collection_block = tui::widgets::Block::default()
+        .title("Message")
+        .borders(tui::widgets::Borders::ALL);
+    frame.render_widget(chats_collection_block, chat_chunks[1]);
+    frame.set_cursor(chat_chunks[1].x + 1, chat_chunks[1].y + 1);
+}
+
 pub fn run() -> Result<(), std::io::Error> {
     ctrlc::set_handler(|| {
         std::io::stdout()
@@ -68,6 +120,7 @@ pub fn run() -> Result<(), std::io::Error> {
         .flush()?
     ;
 
+    let mut terminal = tui::Terminal::new(tui::backend::CrosstermBackend::new(std::io::stdout()))?;
     let mut connection = std::net::TcpStream::connect("127.0.0.1:7474").expect("Could not establish connection!");
 
     let username = setup_username(&mut connection);
@@ -100,11 +153,6 @@ pub fn run() -> Result<(), std::io::Error> {
     let s_new_message = sx.clone();
     std::thread::spawn(move || {
         let mut cursor_pos = 0;
-        std::io::stdout()
-            .execute(cursor::MoveTo(0, crossterm::terminal::size().unwrap().1)).unwrap()
-            .execute(Print("> ")).unwrap()
-        ;
-
         loop {
             let mut message = String::new();
             loop {
@@ -114,14 +162,6 @@ pub fn run() -> Result<(), std::io::Error> {
                             match code {
                                 // TODO: Implement other features!
                                 KeyCode::Enter => {
-                                    // TODO: Reprint the whole screen as enter screws everthing up! (use tui-rs for cool layouts?)
-                                    std::io::stdout()
-                                        .execute(cursor::MoveToPreviousLine(1)).unwrap()
-                                        .execute(Clear(ClearType::UntilNewLine)).unwrap()
-                                        .execute(cursor::MoveToNextLine(1)).unwrap()
-                                        .execute(Clear(ClearType::CurrentLine)).unwrap()
-                                        .execute(Print("> ")).unwrap()
-                                    ;
                                     break;
                                 },
                                 KeyCode::Char(c) => {
@@ -138,12 +178,8 @@ pub fn run() -> Result<(), std::io::Error> {
                         crossterm::event::Event::Paste(string) => {
                             message.push_str(&string);
                         },
-                        crossterm::event::Event::Resize(_, new_height) => {
-                            std::io::stdout()
-                                .execute(Clear(ClearType::CurrentLine)).unwrap()
-                                .execute(cursor::MoveTo(0, new_height)).unwrap()
-                                .execute(Print(format_args!("> {}", message))).unwrap()
-                            ;
+                        crossterm::event::Event::Resize(_, _new_height) => {
+                            // TODO: Call resize on tui!
                         },
                         _ => {},
                     },
@@ -159,19 +195,24 @@ pub fn run() -> Result<(), std::io::Error> {
         }
     });
 
-    let mut print_row = 3;
+    std::thread::spawn(move || {
+        loop {
+            match terminal.draw(|frame| {
+                draw(frame);
+            }) {
+                Ok(_) => {},
+                Err(e) => log::error!("Render failed!: {:?}", e),
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(1000 / 30));
+        }
+    });
 
     loop {
         match rx.recv().unwrap() {
             Command::NewMessage(teams_message) => match teams_message {
                 super::TeamsMessage::Message(m) => {
-                    std::io::stdout()
-                        .execute(cursor::SavePosition).unwrap()
-                        .execute(cursor::MoveTo(0, print_row)).unwrap()
-                        .execute(Print(format_args!("New message!\n'{}': '{}'\n\n", m.user, m.message))).unwrap()
-                        .execute(cursor::RestorePosition).unwrap()
-                    ;
-                    print_row += 1;
+                    let _output = format_args!("New message!\n'{}': '{}'\n\n", m.user, m.message);
                 },
                 _ => {},
             },
@@ -187,13 +228,19 @@ pub fn run() -> Result<(), std::io::Error> {
                     if parts.len() != 2 {
                         std::io::stdout()
                             .execute(cursor::SavePosition).unwrap()
-                            .execute(cursor::MoveTo(0, crossterm::terminal::size().unwrap().1 - 2)).unwrap()
+                            .execute(cursor::MoveTo(0, crossterm::terminal::size().unwrap().1 - 1)).unwrap()
                             .execute(Clear(ClearType::UntilNewLine)).unwrap()
                             .execute(Print("!! User: Message <- that's the format. Please try again !!")).unwrap()
                             .execute(cursor::RestorePosition).unwrap()
                         ;
                         continue;
                     }
+                    std::io::stdout()
+                        .execute(cursor::SavePosition).unwrap()
+                        .execute(cursor::MoveTo(0, crossterm::terminal::size().unwrap().1 - 1)).unwrap()
+                        .execute(Clear(ClearType::UntilNewLine)).unwrap()
+                        .execute(cursor::RestorePosition).unwrap()
+                    ;
 
                     if super::send(& super::TeamsMessage::Message(
                         super::Message{
